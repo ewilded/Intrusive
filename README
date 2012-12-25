@@ -1,0 +1,184 @@
+README
+
+WHAT IS IT
+
+Intrusive2 is a simple log-watcher written in Perl, with IDS, semi-IPS and anomaly detection functionality. It works by monitoring active log files in the realtime, just like tail -f. As new line appears, Intrusive compares it with set of user-defined rules consisting of regular expressions and a few settings. Using this information it takes one of the following actions:
+	- do nothing (treat as normal event, no action taken)
+	- alert (via e-mail, by playing audio file or both)
+	- block further traffic with iptables (as the additional action to alert, not alternative), if enforcing policy is set
+
+Similar tools:
+fail2ban
+http://nixcraft.com/linux-software/477-howto-linux-monitor-logfiles.html logwatch
+http://www.linuxjournal.com/article/4776 - swatch
+http://www.howtoforge.com/preventing_ssh_dictionary_attacks_with_denyhosts
+
+The main difference between this program and its IDS/semi-IPS counterparts, like fail2ban, is that its main mechanism doesn't base on sets of rules denoting an attack; instead BY DEFAULT it bases on a set of rules denoting events that are normal. Thanks to this, instead of focusing just on things we know about (in this case attack patterns), it rather reacts mostly on everything else. This approach lets us to detect vast range of unknown attacks and anomalies, such as misconfigurations, software and hardware errors and so on. It's also quite universal, cause the only thing that software needs to do to be continously monitored is to generate some log files. Nevertheless, it is possible to use Intrusive for known attacks detection and blocking like fail2ban AND detection of unknown events AT THE SAME TIME, it's just the sake of rules configuration. Look at RULE FILES FORMAT and EXAMPLES sections for more information. In turn, another tool, logwatch, doesn't send alerts in the realtime, it just generates a daily report. swatch looks more flexible, however it also appears to miss some options, anyway, as usual, first I have written my own tool, then made a web research for similar software; I just like using my own stuff.
+
+To gain more flexibility in alerting and blocking process, a hybrid approach has been introduced. Therefore, known attack-like events can be also defined as norms with some acceptable treshold frequencies. For example an failed login attempt from SSH is a quite common event in environment with password authentication enabled as the result of simple typos/credentials confusing, and such event, if appeared once, at, let's say 15 minutes, should not be treated as an attack, being a false positive. That's what are the tresholds for - you can decide yourself, depending on your system and environment, which frequencies of what events should be treated as something nasty or at least worth deeper analysis. Look at the first example in the EXAMPLES section.
+
+CONFIG FILE
+/etc/intrusive/config
+All tuneable settings (except rules themselves and log file paths) are located in this file. This is what exmple configuration looks like:
+
+# Intrusive2 configuration file
+# source address for mail alerts (you can put any number of e-mail addresses, separaterd with spaces)
+# this list can be extended on per-logfile level in the RULEFILES file (see RULEFILES FILE FORMAT section for more info)
+mail_addrs=you@example.com anotheryou@example.com
+mail_from=intrusive@psychodela.pl
+# default behaviour (permissive - alert only, enforcing - block IP if available)
+policy=permissive
+# verbose output
+debug=1
+# do not send alerts more frequent than this amount of seconds (every alert coming out while this limit is reached is buffered, this option is intended to avoid flooding your mailbox/speaker with alerts)
+alert_repeat_delay=60 
+ban_anomalies=0 # wether or not block IP-s pulled out from not recognized log lines (pure anomalies, with no norms), only relevant to enforcing mode, its safer to leave this set to 0
+### FIXED SETTINGS SECTION (rarely changed)
+## default treshold 0 means everything is treaded as an anomaly/attack (it's just default number of allowed events of any kind)
+# tresholds can be overwritten on both per-logfile level (in the RULEFILES file, see RULEFILES FILE FORMAT section for more info) and per-rule level (in the /etc/intrusive/rules/* files, see RULE FILES FORMAT section for more info)
+treshold_per_host_default=0
+treshold_overall_default=0
+# excluded hosts are friednly IP-s, IF YOU'RE USING ENFORCING POLICY, IT'S VERY IMPORTANT to put here all friendly IP-addresses as you can, such as your public IP addresses, your local networks, servers you always connect to and so on, this will prevent Intrusive from blocking them with iptables if it detects attack/anomaly (alert is raised anyway) 
+excluded_hosts=/etc/intrusive/excluded_hosts_list
+# this file is appended as new attacks are detected
+evil_hosts=/var/run/intrusive/intrusive.shun
+rulefiles=/etc/intrusive/rulefiles
+pidfile=/var/run/intrusive.pid
+# this is the default audio file played on alert, set this to empty value to disable sound alerts
+# this option can be overwritten on per-logfile level in the RULEFILES file (see RULEFILES FILE FORMAT section for more info)
+sound_alert=/usr/share/intrusive/warning.mp3
+lock_file=/var/run/intrusive.lock
+log_file=/var/log/intrusive.log
+alert_marker=/var/run/intrusive_alert.mark
+alert_lock=/var/run/intrusive_alert.lock
+
+
+RULESFILES FILE FORMAT
+/etc/intrusive/rulefiles
+
+
+This file contains a list of log file paths along with contributing rule file paths, types of alerts enabled (e-mail/sound/both), and parameters for those alerts (e-mail address, sound file path).
+		log_path:rule_path:alert_type:e-mail:sound:treshold_overall:treshold_per_host:policy
+		log_path and rule_path are mandatory, all of the other parameters are optional and will be inherited from the main configuration, which gives powerful flexibility. Both log_path and rule_path can contain * globbing character (list is generated by executing ls with sh (exec)). It is recommended to use one, dedicated directory for the rule files (like /etc/intrusive/rules/ dir).
+		For the treshold parameter description see RULES FILES FORMAT.
+		e-mail address is just an e-mail address to which alerts are sent if e-mail alert option is enabled. 
+		sound_path points to a file with an audio file with alert sound to play (it's played by running unix 'play' program).
+		alert_type can take the following values:
+			all (this is the default)
+			mail
+			sound
+
+RULE FILES FORMAT
+/etc/intrusive/rules/*
+
+
+		preg:date_format_backreference:treshold_overall:treshold_per_host:policy
+				
+		preg is used to match log line (by ^$preg$), so it musn't contain starting and ending line preg delimiters (^ and $).
+		This is the only mandatory parameter, other are optional, however, if skipped, they have to be specified as empty, so the number of semicolons after regular expression is always the same, for instance:
+		\w{3} \d+ \d+:\d+:\d+ \w+ su\[\d+\]: - \/dev\/pts\/\d+ \w+:\w+::::
+		where \w{3} \d+ \d+:\d+:\d+ \w+ su\[\d+\]: - \/dev\/pts\/\d+ \w+:\w+ is a regular expression and other parameters are empty. If empty, the value is inherited from the one specified in RULEFILES file (tresholds and the policy).
+		
+		OPTIONAL PARAMETERS	 
+		date_format_backreference is used to map dates appearing in the log (if any) to calculate time diefferences between events in sequence. This option is used only for detection of automated requests, like http wget, web scanning attacks and so on, leave this field blank to skip automated requests detection. If you don't want the rule to be used for this purpose, simply leave this parameter blank and skip to the treshold parameters description.
+		If you'd like to use it, read further.
+		It just shows the order of the date parts backreferences refering to date parts enclosed in brackets in the regular expression.
+		It has to match to the following format:
+		$num-$num-$num $num-$num-$num
+		For example, if we have the following rule line for catching automated http requests:
+		 \d+\.\d+\.\d+\.\d+ - - \[(\d+)\/(\w+)\/(\d{4}):(\d{2}):(\d{2}):(\d{2}) \+\d+\] "\w{3,4} \/.*? HTTP\/1\.\d" \d{3} \d+.*:$3-$2-$1-$4-$5-$6:-1:-1
+		date is encloses in brackets, so we can pull it out. To be able to do this, intrusive needs to know, which part denotes what.
+		It expects backreference to tell it the sequence of backreference holders, so it can glue the date back in the following order:
+		year-month-day hour-min-sec, that's why if the order in the log file is different, and it almost always is, this construct lets the script to assemble it back to expected order, so it can calculate time differnces between another requests. As we figure out from the example, date format in the httpd log I was basing on gives results like this:
+		25/Jan/2012:18:35:50
+		so of course $1 is 25, Jan is $2, $3 is 2012, $4 is 18, $5 is 35, $6 is 50. That's why to get it back to YYYY-MM-DD-HH-MM-SS format, $3-$2-$1 $4-$5-$6 date backref is used.
+		
+		Treshold field is a number of related events per MINUTE (frequency*60), which is required to be reached to raise the alert.
+		To gain more flexibility, there are three levels of treshold settings.
+		$treshold_overall_default and $treshold_per_host_default variables in the beginning of the file are the default values inherited to all cases when no value is specified.
+		Meaning:
+		  -1			unlimited (it does not matter how many times event does occur  - it's not reported nor blocked) - this is the default value
+		  0  			no acceptable limit exists - action is taken immediately, no single occurence is treated as a normal behaviour
+		  N>0		any positive number; how many times event is allowed to occur per minute, if this limit is passed alert is raised
+		- treshold overall is a global value for all the events, regardless to the event source (source IP)
+		- treshold per host is a limit to reach for single host to raise the alert. 
+		If optional parameters are not set, they have to be specified as empty (number of semicolons has to be the same to properly distinguish parameters from regular expression parts (cause pregs almost always contain some semicolons too)).
+	
+
+EXCLUDED HOSTS FILE
+This file can contain both single host IP-s and network IP-s specified with CIDR. These are IP-addresses that will never be blocked with iptables even if an anomaly/attack is detected and policy is set to enforcing. These addresses are also used for the process of elimination of attacker IP-s when parsing log files, since there are often situations when more than one IP-addresses are present in the logfile line, and usually one of them is our local interface's IP, so this file is important when using enforcing mode.
+ 
+ 
+DEPLOYMENT
+As far as there's no RPM package created yet, just do the following things:
+- place intrusive-rc.sh at /etc/init.d/intrusive
+- intrusive.pl to /usr/sbin
+- create /etc/intrusive/ directory, with rules subdir
+- create /etc/intrusive/excluded_hosts_list and put there all friendly IP-s (at least your local interfaces, to avoid blocking yourself in the case of some false positive with enforcing policy), you can specify whole networks with CIDR too, like 192.168.1.0/24
+- copy config to /etc/intrusive/config, and tune it to your needs
+- copy rulefiles file and rules/* to /etc/intrusive/rulefiles and /etc/intrusive/rules/, tune them up to your needs
+- if you'd like to use default sound warnings, create /usr/share/intrusive directory and copy there audio files delivered in tarball
+- remember to add /etc/init.d/intrusive restart to any logrotate postrotate sections for logs being monitored, otherwise after rotating the log intrusive will stop seeing current events (beacuse it will still read the rotated logfile, which is no more appended after that)
+- to run Intrusive automatically, just use chkconfig intrusive on
+
+EXAMPLES
+
+This section describes default rule configurations delivered with Intrusive2. First example is intended for monitoring the 'auth' events on the system, in this example /var/log/secure file. The second one shows how Intrusive can be used for IDS/semi-IPS purpose only, with no native anomaly detection for services  like Asterisk, which produce a lot of various output lines and the process of creating rules denoting norms (to detect everything else as an anomaly) would be quite arduous and unfortunately we don't have enough time for doing this.
+
+Our rulefiles file:
+/var/log/secure:/etc/intrusive/rules/auth:both:::6:3:permissive
+/var/log/asterisk/messages:/etc/intrusive/rules/asterisk:both::/usr/share/intrusive/combichrist_intruder_alert.wav:0:0:permissive
+
+EXAMPLE FIRST (sshd/auth)
+rulefiles part:
+/var/log/secure:/etc/intrusive/rules/auth:both:::6:3:permissive
+
+Let's get into first example, auth. Rules (/etc/intrusive/rules/auth) look like this:
+\w{3} \d+ \d+:\d+:\d+ \w+ su\[\d+\]: - \/dev\/pts\/\d+ \w+:\w+::-1:-1:
+\w{3} \d+ \d+:\d+:\d+ \w+ su\[\d+\]: Successful su for \w+ by \w+::-1:-1:
+\w{3} \d+ \d+:\d+:\d+ \w+ su\[\d+\]: \+ \/dev\/pts\/\d+ \w+:\w+::-1:-1:
+\w{3} \d+ \d+:\d+:\d+ \w+ sshd\[\d+\]: Accepted password for \w+ from \d+\.\d+\.\d+\.\d+ port \d+ ssh\d+::-1:-1:
+\w{3} \d+ \d+:\d+:\d+ \w+ sshd\[\d+\]: Accepted publickey for \w+ from \d+\.\d+\.\d+\.\d+ port \d+ ssh\d+::-1:-1:
+\w{3} \d+ \d+:\d+:\d+ \w+ sshd\[\d+\]: Received disconnect from \d+\.\d+\.\d+\.\d+: \d+: disconnected by user::-1:-1:
+\w{3} \d+ \d+:\d+:\d+ \w+ sshd\[\d+\]: Timeout, client not responding\.::-1:-1:
+\w{3} \d+ \d+:\d+:\d+ \w+ su\[\d+\]: Authentication failed for \w+::10:3:enforcing
+\w{3} \d+ \d+:\d+:\d+ \w+ su\[\d+\]: FAILED su for \w+ by \w+::10:3:enforcing
+\w{3} \d+ \d+:\d+:\d+ \w+ su\[\d+\]: - \/dev\/pts\/\d+ \w+:\w+::10:3:enforcing
+\w{3} \d+ \d+:\d+:\d+ \w+ sshd\[\d+\]: Received disconnect from \d+\.\d+\.\d+\.\d+: \d+: disconnected by user::-1:-1:
+\w{3} \d{1,2} \d{2}:\d{2}:\d{2} \w+ sshd\[\d+\]: pam_unix\(sshd:session\): session opened for user \w+ by \(uid=0\)::-1:-1:
+\w{3} \d{1,2} \d{2}:\d{2}:\d{2} \w+ sshd\[\d+\]: pam_unix\(sshd:session\): session closed for user \w+::-1:-1:
+\w{3} \d{1,2} \d{2}:\d{2}:\d{2} \w+ sshd\[\d+\]: Received disconnect from \d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}: 11: disconnected by user::-1:-1:
+\w{3} \d{1,2} \d{2}:\d{2}:\d{2} \w+ su: pam_unix\(su:session\): session opened for user \w+ by \w+\(uid=0\)::-1:-1:
+\w{3} \d{1,2} \d{2}:\d{2}:\d{2} \w+ su: pam_unix\(su:session\): session closed for user \w+::-1:-1:
+\w{3} \d{1,2} \d{2}:\d{2}:\d{2} \w+ sshd\[\d+\]: Accepted publickey for \w+ from \d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3} port \d+ ssh2::-1:-1:
+\w{3} \d{1,2} \d{2}:\d{2}:\d{2} \w+ sshd\[\d+\]: Accepted password for \w+ from \d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3} port \d+ ssh2::-1:-1:
+\w{3} \d{1,2} \d{2}:\d{2}:\d{2} \w+ sshd\[\d+\]: pam_unix\(sshd:auth\): authentication failure; logname= uid=\d+ euid=\d+ tty=ssh ruser= rhost=[\w\.]+  user=\w+::10:3:enforcing
+\w{3} \d{1,2} \d{2}:\d{2}:\d{2} \w+ sshd\[\d+\]: Failed password for \w+ from \d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3} port \d+ ssh2::10:3:enforcing
+\w{3} \d{1,2} \d{2}:\d{2}:\d{2} \w+ sshd\[\d+\]: Server listening on :: port \d+\.::-1:-1:
+\w{3} \d{1,2} \d{2}:\d{2}:\d{2} \w+ sshd\[\d+\]: Server listening on 0.0.0.0 port \d+\.::-1:-1:
+
+In this configuration, log file /var/log/secure is monitored continously for events. Default policy is set to permissive, which means that there's no iptables blocking on attack/anomaly, until defined otherwise. There are both alerting methods enabled (sound and e-mail). Default overall attack/anomaly treshold is 6 events of each type per minute, and 3 events of each type per single host. These values are inherited for each rule, if it has its own local treshold and enforce values empty (there is no such case in this example). Most of the rules are just norm definitions (those with -1 in treshold values), which means there can appear any number of those events without raising any alert or taking other action. There are also few bad things definitions, like authentication failures. These have set tresholds, which will raise the alert (and optionally block too) if reached. For instance:
+\w{3} \d+ \d+:\d+:\d+ \w+ su\[\d+\]: Authentication failed for \w+::10:3:enforcing
+this rule makes Intrusive tolerate up to ten authentication failures (regardless of the username, host, time, etc, however this can be changed to meet your specific demands, they're just regular expressions) per minute, and three per every single host. If limits are crossed, alert is raised (both sound playing and mailing in this case), and since there's enforcing local policy overwrite, even though the default policy for this logfile is set to permissive, such action will be block with iptables (of course if there's an IP address present in the line which cause the alert, in this particular rule there's not. But it is here:
+\w{3} \d{1,2} \d{2}:\d{2}:\d{2} \w+ sshd\[\d+\]: Failed password for \w+ from \d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3} port \d+ ssh2::10:3:enforcing
+and those two events usually take place together. 
+Let's move further then. If no match is made (line did not match to any rule), default policy is executed (which is permissive, according to this example configuration), so it will result with alert with regard to anomaly detected. If it was set to enforcing, and ban_anomalies config file option would be set to 1, Intrusive would block the IP with iptables (if it found the IP in the log line causing the alert and IP would not belong to friendlies according to the excluded_hosts list).
+
+EXAMPLE TWO (asterisk)
+rulefiles part:
+/var/log/asterisk/messages:/etc/intrusive/rules/asterisk:both::/usr/share/intrusive/combichrist_intruder_alert.wav:0:0:permissive
+/var/log/asterisk/messages is the file being watched, again both alerting methods are enabled, audio file this time is different, so we know it's an asterisk-related event, if we run such on our home server, by default tresholds are set to 0, which means everything is treated as an anomaly, however, this configuration shows different approach, and as it will turn, it's not able to detect any anomalies, but just known attacks. Let's take a look:
+
+\[\w{3} \d{1,2} \d{2}:\d{2}:\d{2}\] NOTICE\[\d+\] chan_sip\.c: Registration from '<sip:\w+@.*?>' failed for '\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}:\d+' - Wrong password::0:0:permissive
+\[\w{3} \d{1,2} \d{2}:\d{2}:\d{2}\] NOTICE\[\d+\] chan_sip\.c: Registration from '<sip:\w+@.*?>' failed for '\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}:\d+' - Username\/auth name mismatch::0:0:permissive
+\[\w{3} \d{1,2} \d{2}:\d{2}:\d{2}\] NOTICE\[\d+\] chan_sip\.c: Registration from '\w+ <sip:\w+@.*?>' failed for '\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}:\d+' - Wrong password::0:0:permissive
+\[\w{3} \d{1,2} \d{2}:\d{2}:\d{2}\] NOTICE\[\d+\] chan_sip\.c: Registration from '\w+ <sip:\w+@.*?>' failed for '\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}:\d+' - Username\/auth name mismatch::0:0:permissive
+\[\w{3} \d{1,2} \d{2}:\d{2}:\d{2}\] NOTICE\[\d+\] chan_sip\.c: Registration from '"\w+" <sip:\w+@.*?>' failed for '\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}:\d+' - Wrong password::0:0:permissive
+\[\w{3} \d{1,2} \d{2}:\d{2}:\d{2}\] NOTICE\[\d+\] chan_sip\.c: Registration from '"\w+" <sip:\w+@.*?>' failed for '\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}:\d+' - Username\/auth name mismatch::0:0:permissive
+\[\w{3} \d{1,2} \d{2}:\d{2}:\d{2}\] WARNING\[\d+\] chan_sip\.c: Forbidden - maybe wrong password on authentication for NOTIFY::0:0:permissive
+\[\w{3} \d{1,2} \d{2}:\d{2}:\d{2}\] WARNING\[\d+\] app_voicemail\.c: Unable to read password::0:0:permissive
+\[\w{3} \d{1,2} \d{2}:\d{2}:\d{2}\] NOTICE\[\d+\] manager\.c: \S+ failed to authenticate as '.*?'::0:0:permissive
+\[\w{3} \d{1,2} \d{2}:\d{2}:\d{2}\] NOTICE\[\d+\] chan_sip\.c: Failed to authenticate on REGISTER to '\w+@.*?' \(Tries \d+\)::0:0:permissive
+.*::-1:-1:
+
+All of the lines EXCEPT LAST are just patterns of few authentication incidents, with no tolerance treshold (these 0-s are redundant actually, since the defult tresholds are already set to 0). Since the matching process stops on first hit, all authentication events will be alerted. Otherwise, the last rule will catch EVERYTHING that was not catched till this moment, which means that everything not matching to these patterns before is treated with -1 treshold, which denotes a normal event. This gives at general the same functionality as fail2ban (as you can see, no anomaly detection takes place here, so we're still exposed to unknown attacks, thanks to the last rule), but at least such configuration can be made relatively quick, cause, as I stated before, creating a good, well tested, decent set of NORM definitions for asterisk events, at least for now, seems to me like a way through pain and misery (especially cause it also depends on verbosity level and so on), so I just decided to use it as an example of Intrusive's flexibilty.

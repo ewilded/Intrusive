@@ -1,0 +1,30 @@
+# Intrusive2 configuration file
+# source address for mail alerts (you can put any number of e-mail addresses, separaterd with spaces)
+# this list can be extended on per-logfile level in the RULEFILES file (see RULEFILES FILE FORMAT section for more info)
+mail_addrs=you@example.com anotheryou@example.com
+mail_from=intrusive@psychodela.pl
+# default behaviour (permissive - alert only, enforcing - block IP if available)
+policy=permissive
+# verbose output
+debug=1
+# do not send alerts more frequent than this amount of seconds (every alert coming out while this limit is reached is buffered, this option is intended to avoid flooding your mailbox/speaker with alerts)
+alert_repeat_delay=60 
+ban_anomalies=0 # wether or not block IP-s pulled out from not recognized log lines (pure anomalies, with no norms), only relevant to enforcing mode, its safer to leave this set to 0
+### FIXED SETTINGS SECTION (rarely changed)
+## default treshold 0 means everything is treaded as an anomaly/attack (it's just default number of allowed events of any kind)
+# tresholds can be overwritten on both per-logfile level (in the RULEFILES file, see RULEFILES FILE FORMAT section for more info) and per-rule level (in the /etc/intrusive/rules/* files, see RULE FILES FORMAT section for more info)
+treshold_per_host_default=0
+treshold_overall_default=0
+# excluded hosts are friednly IP-s, IF YOU'RE USING ENFORCING POLICY, IT'S VERY IMPORTANT to put here all friendly IP-addresses as you can, such as your public IP addresses, your local networks, servers you always connect to and so on, this will prevent Intrusive from blocking them with iptables if it detects attack/anomaly (alert is raised anyway) 
+excluded_hosts=/etc/intrusive/excluded_hosts_list
+# this file is appended as new attacks are detected
+evil_hosts=/var/run/intrusive/intrusive.shun
+rulefiles=/etc/intrusive/rulefiles
+pidfile=/var/run/intrusive.pid
+# this is the default audio file played on alert, set this to empty value to disable sound alerts
+# this option can be overwritten on per-logfile level in the RULEFILES file (see RULEFILES FILE FORMAT section for more info)
+sound_alert=/usr/share/intrusive/warning.mp3
+lock_file=/var/run/intrusive.lock
+log_file=/var/log/intrusive.log
+alert_marker=/var/run/intrusive_alert.mark
+alert_lock=/var/run/intrusive_alert.lock

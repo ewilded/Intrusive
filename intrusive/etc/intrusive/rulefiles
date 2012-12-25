@@ -1,0 +1,4 @@
+/var/log/secure:/etc/intrusive/rules/auth:both::/usr/share/intrusive/combichrist_intruder_alert.wav:6:3:permissive
+/var/log/cron:/etc/intrusive/rules/cron:mail::1:1:permissive
+#/var/log/asterisk/messages:/etc/intrusive/rules/asterisk:both::/usr/share/intrusive/combichrist_intruder_alert.wav:0:0:permissive
+#/var/log/httpd/access_log:/etc/intrusive/rules/httpd:both::/usr/share/intrusive/warning.mp3:::

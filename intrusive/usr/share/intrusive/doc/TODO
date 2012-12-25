@@ -1,0 +1,38 @@
+TODO (version 2.0 rc)
+
+- consider increasing select delay (this should let us skip the alert-log splitting when multiple lines are involved (on first and other lines, as it usually looks like)
+- build in auto whois/geoip for suspected IP-s
+- put it into public
+- create RPM package	[PROGRESS]
+
+- send an e-mail if intrusive was shut down unclean / or use some watchdog
+- rules for other services than auth/sshd (httpd, auditd, MySQL, dmesg, messages?)
+
+[DONE]
+- finish up (update) the presentation [DONE]
+- fix/check the IP backreferencing sequence so there will be no mistakes or tricks like causing other IP to be banned (for instance by using IP in some string appearing in the log before host's IP - this would cause bypassing the enforcing mechanism	[DONE]
+- add more information into mail alerts (type of anomaly, counters, action taken)		[DONE]
+- fix mail sending	[DONE]
+- multi mail addrs	[DONE]
+- solve the buffer filling issue (timestamp)		[DONE]
+- move configuration section into file	[DONE]
+- extend rulefiles and rules settings with enforce/permissive mode overwritting	[DONE]
+- more detail mailing	[DONE]
+- multi IP-s problem		[DONE]
+- test enforce mode	 [DONE]
+- solve block/alert held issue	[DONE]
+- non-anomaly mode for some sort of logs (for instance asterisk - let's steal the rules from fail2ban or somethning) - basic asterisk [DONE]
+- additional sounds (default warning, Layhee 'calling the heavies', Combichrist - Intruder alert)	[DONE, except LayHee]
+- update the documentation (asterisk IDS for instance (EXAMPLES))	[DONE]
+- fix redhat-like service script	[DONE]
+- add pregs testing on start or alert if rule is fucked, to avoid process to exit on such event [this is a serious issue]
+- basic rules for cron [DONE]
+- very basic rules for messages [DONE]
+
+[ Release 2.0 ]
+- it does not resolve hostnames from the logs, it should
+- privs dump
+- add DoS protection (config chmod check)
+- improve the shun list so it contains extended information about the target (types and times of activity detected, intrusive instance on which was it catched (we can then merge it to some interesting database for botnet tracking)
+- additional remote logging from other servers (http://www.freebsd.org/doc/handbook/network-syslogd.html)
+

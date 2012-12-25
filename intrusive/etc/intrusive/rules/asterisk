@@ -1,0 +1,11 @@
+\[\w{3} \d{1,2} \d{2}:\d{2}:\d{2}\] NOTICE\[\d+\] chan_sip\.c: Registration from '<sip:\w+@.*?>' failed for '\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}:\d+' - Wrong password::0:0:permissive
+\[\w{3} \d{1,2} \d{2}:\d{2}:\d{2}\] NOTICE\[\d+\] chan_sip\.c: Registration from '<sip:\w+@.*?>' failed for '\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}:\d+' - Username\/auth name mismatch::0:0:permissive
+\[\w{3} \d{1,2} \d{2}:\d{2}:\d{2}\] NOTICE\[\d+\] chan_sip\.c: Registration from '\w+ <sip:\w+@.*?>' failed for '\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}:\d+' - Wrong password::0:0:permissive
+\[\w{3} \d{1,2} \d{2}:\d{2}:\d{2}\] NOTICE\[\d+\] chan_sip\.c: Registration from '\w+ <sip:\w+@.*?>' failed for '\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}:\d+' - Username\/auth name mismatch::0:0:permissive
+\[\w{3} \d{1,2} \d{2}:\d{2}:\d{2}\] NOTICE\[\d+\] chan_sip\.c: Registration from '"\w+" <sip:\w+@.*?>' failed for '\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}:\d+' - Wrong password::0:0:permissive
+\[\w{3} \d{1,2} \d{2}:\d{2}:\d{2}\] NOTICE\[\d+\] chan_sip\.c: Registration from '"\w+" <sip:\w+@.*?>' failed for '\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}:\d+' - Username\/auth name mismatch::0:0:permissive
+\[\w{3} \d{1,2} \d{2}:\d{2}:\d{2}\] WARNING\[\d+\] chan_sip\.c: Forbidden - maybe wrong password on authentication for NOTIFY::0:0:permissive
+\[\w{3} \d{1,2} \d{2}:\d{2}:\d{2}\] WARNING\[\d+\] app_voicemail\.c: Unable to read password::0:0:permissive
+\[\w{3} \d{1,2} \d{2}:\d{2}:\d{2}\] NOTICE\[\d+\] manager\.c: \S+ failed to authenticate as '.*?'::0:0:permissive
+\[\w{3} \d{1,2} \d{2}:\d{2}:\d{2}\] NOTICE\[\d+\] chan_sip\.c: Failed to authenticate on REGISTER to '\w+@.*?' \(Tries \d+\)::0:0:permissive
+.*::-1:-1:
