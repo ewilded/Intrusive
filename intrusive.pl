@@ -34,6 +34,8 @@ my $last_alert;
 my %previous_log_time;
 my @alert_buff=();
 my $last_alert_repeat_cnt=0;
+my $last_activity=0;
+my $events_buffered_cnt=0;
 $|=1;
 open(PIDFILE,">$conf{pidfile}");
 print PIDFILE $$;
@@ -73,8 +75,6 @@ sub load_rules
 			&logme("$rule_string is not compliant with my format (see README - RULE FILES FORMAT)");
 			next;
 		}
-		#&logme("Loading rules string $rule_string ... (treshold_per_host: $4, treshold_overall: $3)") if($conf{debug});
-		#preg:date_format_backreference:treshold_per_host:overall_treshold
 		my $pcre=$1;
 		my $date_backreference=$2;
 		my $treshold_per_host=$4;
@@ -83,7 +83,7 @@ sub load_rules
 		# self test:
 		## if any regular expression is bad, script will exit immediately after match try
 		#print "[SELF-TEST] $pcre\n";
-		"foo"=~/"^$pcre$/;
+		"foo"=~/"^$pcre$/; #"
 		push(@rules,{preg=>$pcre,date_backreference=>$date_backreference,treshold_per_host=>$treshold_per_host,treshold_overall=>$treshold_overall,policy=>$policy}); ## array of hashes, hehe
 			$cnt++;
 	}
@@ -128,7 +128,6 @@ sub monitor_log 	## READY
 	read_log:
 	if($buff&&$bytes_read)
 	{
-		#print "[DEBUG-READ-BUFFER][$bytes_read]: $buff\n";
 		if(!($buff=~/\n$/))
 		{
 			$buff=~/([^\n]+)$/;
@@ -138,9 +137,7 @@ sub monitor_log 	## READY
 		{
 			$last_chunk='';
 		}
-		print "[PARSER-DEBUG-CHUNK]: $last_chunk\n";
 		my @lines=split(/\n/,$buff);
-		print "SPLIT INTO ".scalar(@lines)." lines\n";
 		for(my $i=0;$i<@lines;$i++)
 		{
 			$IP='';
@@ -152,9 +149,6 @@ sub monitor_log 	## READY
 			}
 			## that's why by default we don't block IP-s pulled out from unknown lines (pure anomalies, no norm-pregs, no tresholds)
 			last if($i==scalar(@lines)-1&&$last_chunk);
-			#print "[PARSER-DEBUG] PROCESSING $line\n";
-			# 11/Dec/2011:14:35:23
-			##check for time conditions before using pregs
 			my $row_suspected=1; ## default policy
 			my $preg;
 			my $preg_catched=0;
@@ -382,28 +376,34 @@ sub monitor_log 	## READY
 			if($row_suspected eq 1)
 			{
 				push(@alert_buff,{line=>$line,IP=>$IP,preg=>$preg,alert_type=>$alert_type,mail_addr=>$mail_addr,sound_path=>$sound_path,preg_catched=>$preg_catched,limit_reached=>$limit_reached,policy=>$policy,block_performed=>0,log_file=>$log_file});
-				#print "There are ".scalar(@alert_buff)." alerts to raise.\n" if($conf{debug});
 				$limit_reached=0;
 				$buff=''; ## clear the buffer after alert
 			}
 		} # end of for (lines)
 	} ## end of if(buff)
- 	#print "[DEBUG-SYSREAD-BEFORE]\n";
-	#print "There are ".scalar(@alert_buff)." alerts to raise 2.\n" if($conf{debug});
- 	&alert() if(scalar(@alert_buff)>0); ## run alert method if the alert buff is not empty
- 	$buff=''; ## flush the fucking buffer
+	if(scalar(@alert_buff)>0)
+	{
+		my $d=time-$last_activity;
+		if(($d>20||$events_buffered_cnt eq 3)&& &alert() eq 1) ### wait for 20 seconds for new events to put them in one alert message, up to 3 events with time windows shorter than this
+		{
+			$events_buffered_cnt=0;			
+			## run the alert method if the alert buff is not empty AND (buffer hasn't been appended for longer than 30 seconds (event series split avoidance) OR there were more than 4 events one after another (to secure this mechanism from continuous putting off the alert by sending more and more events) 
+		}
+		else
+		{
+			$events_buffered_cnt++;
+		}	
+	}
+ 	$buff='';
 	$bytes_read=sysread LOG,$buff,1024;
+	$last_activity=time if($bytes_read>0);
 	$buff="$last_chunk$buff";
-	#print "[DEBUG-SYSREAD-AFTER] (bytes read: $bytes_read)\n";
 	select(undef,undef,undef,0.1);
 	goto read_log;
 }
 sub send_mail 	## READY 
 {
-	#print "[DEBUG] mail sender\n";
 	my $content=shift;
-	#my $preg_catched=shift;
-	#my $limit_reached=shift;
 	chomp($content);
 	my $hostname=`hostname`;
 	chomp($hostname);
@@ -426,7 +426,7 @@ sub alert	## READY
 	my $alert_now=1;
 	if( -f $conf{alert_lock})
 	{
-	 	print "[DEBUG] alert held due the existance of alert lock file ($conf{alert_lock}).\n" if($conf{debug});
+	 	print "[DEBUG] alert held due the existence of alert lock file ($conf{alert_lock}).\n" if($conf{debug});
 	 	$alert_now=0;
 	}
 	elsif(-f $conf{alert_marker})
@@ -442,8 +442,6 @@ sub alert	## READY
 	 		$alert_now=0;	 		
 	 	}
 	 }
-	#push(@alert_buff,{line=>$line,IP=>$IP,preg=>$preg,alert_type=>$alert_type,mail_addr=>$mail_addr,sound_path=>$sound_path,preg_catched=>$preg_catched,limit_reached=>$limit_reached,policy=>$policy});
-	print "[ALERT PERFORMED] (alert now: $alert_now)\n";
 	my $sound_path;
 	my $mail_addr;
 	my $alert_string='';
@@ -456,15 +454,11 @@ sub alert	## READY
 		my $rule_preg=$alert_buff[$i]{rule_preg};
 		my $alert_type=$alert_buff[$i]{alert_type};
 		$alert_types{$alert_type}=1;
-		#print "[DEBUG] $alert_type alert type added.\n";
 		$mail_addr=$alert_buff[$i]{mail_addr};
 		$sound_path=$alert_buff[$i]{sound_path};
-		my $preg_catched=$alert_buff[$i]{preg_catched}; # we know wether or not it's a pure anomaly
+		my $preg_catched=$alert_buff[$i]{preg_catched}; # we know whether or not it's a pure anomaly
 		my $limit_reached=$alert_buff[$i]{limit_reached};
 		my $policy=$alert_buff[$i]{policy};
-		
-		# block section
-		#print "IP: $IP, policy: $policy\n";
 		if($IP ne undef && $policy eq 'enforcing' && $alert_buff[$i]{block_performed} eq 0)
 		{
 			if(!$preg_catched||!$conf{ban_anomalies})
@@ -479,8 +473,19 @@ sub alert	## READY
 				}
 				else
 				{ 
-					`iptables -I INPUT -s $IP -j DROP`;
-					&logme("[BANNED] $IP");
+					if($banned_ips{$IP} eq undef)
+					{
+						`iptables -I INPUT -s $IP -j DROP`;
+						$banned_ips{$IP}=1;
+						&logme("[BANNED] $IP");
+						open(EVIL_HOSTS,">>$conf{evil_hosts}");
+						print EVIL_HOSTS "$IP\n";
+						close(EVIL_HOSTS);
+					}
+					else
+					{
+						&logme("[ALREADY BANNED] $IP");
+					}
 				}
 			}
 			$alert_buff[$i]{block_performed}=1;
@@ -533,10 +538,10 @@ sub alert	## READY
 	 	$alert_string.=$content;
 	} # end of foreach
 	
-    return if(!$alert_now);
+    return 0 if(!$alert_now);
 	 my $send_buff=$alert_string;
 	 @alert_buff=();
-	 return if(fork);
+	 return 1 if(fork);
 	 open(F1,">$conf{alert_lock}");
 	 open(F2,">$conf{alert_marker}");
 	 close(F2);
