@@ -5,14 +5,13 @@
 use strict; 
 use Fcntl 'O_RDONLY';
 use Fcntl 'SEEK_END';
-use Switch;
 use Time::Local;
 use Digest::MD5 qw(md5_hex);
 
 ## CONFIG SECTION
 my %conf;
-open(CONF,'</etc/intrusive/config') or die("No configuration file /etc/intrusive/config available!");
-# check if the file is writable by someone else, if it is, return (to avoid DoS attack)
+open(CONF,'</etc/intrusive/config') or die("No configuration file /etc/intrusive/config available. Exiting.");
+
 while(my $line=<CONF>)
 {
 	next if($line=~/^#/);
@@ -23,7 +22,12 @@ while(my $line=<CONF>)
 }
 close(CONF);
 
-my @mail_alert_addrs=split(/\s+/,$conf{'mail_addrs'});
+my @mail_alert_addrs=split(/\s+/,$conf{'mail_addrs'}) if($conf{'mail_addrs'} ne undef);
+
+#my @SMS_numbers=split(/\s+/,$conf{'SMS_nrs'}) if($conf{'SMS_nrs'} ne undef);
+# implement later ;]
+
+
 my @curr_mail_addrs=();
 my @rules=();
 my %excluded_hosts;
@@ -37,6 +41,7 @@ my $last_alert_repeat_cnt=0;
 my $last_activity=0;
 my $events_buffered_cnt=0;
 $|=1;
+
 open(PIDFILE,">$conf{pidfile}");
 print PIDFILE $$;
 close(PIDFILE);
@@ -112,7 +117,6 @@ sub monitor_log 	## READY
 		&logme("[ERROR] $log_file does not exist, child exiting.");
 		exit;
 	}
-	## now loading the rules
    # log_path:rule_path:treshold_overall:treshold_per_host:e-mail:sound
    # log_path and rule_path are mandatory
 	&load_rules($rule_path);
@@ -383,14 +387,16 @@ sub monitor_log 	## READY
 	} ## end of if(buff)
 	if(scalar(@alert_buff)>0)
 	{
-		my $d=time-$last_activity;
-		if(($d>20||$events_buffered_cnt eq 3)&& &alert() eq 1) ### wait for 20 seconds for new events to put them in one alert message, up to 3 events with time windows shorter than this
+		my $d=time-$last_activity;	# when was the previous event fetched
+		if(($d>20||$events_buffered_cnt >= 3)&& &alert() eq 1) ### give any further events 20 more seconds to get collected, to avoid splitting related log entries occurring in nearly same time between separate alerts, but do not withold for more than 3 messages either (otherwise one could keep generating an event every 19 seconds and therefore keep Intrusive from alerting for ever, stuffing all the events into the buffer)
 		{
 			$events_buffered_cnt=0;			
-			## run the alert method if the alert buff is not empty AND (buffer hasn't been appended for longer than 30 seconds (event series split avoidance) OR there were more than 4 events one after another (to secure this mechanism from continuous putting off the alert by sending more and more events) 
+			# zero the counter, as the second condition indicates that we have just sent out an alert			
 		}
 		else
 		{
+			print "Holding stuff because last activity was less than 20 seconds ago ($d seconds ago) or events_buffered_cnt ($events_buffered_cnt) < 3" if($conf{debug});
+			sleep(1);
 			$events_buffered_cnt++;
 		}	
 	}
@@ -409,14 +415,14 @@ sub send_mail 	## READY
 	chomp($hostname);
 	my $subject='Intrusive2 alert on '.$hostname;
 	my $title=$subject;
-	open(F,'>/tmp/intrusive.alert');
+	open(F,">$conf{alert_buff}");
+	chmod 0600, $conf{alert_buff};		# prevent info disclosure
 	print F "Subject:$subject\nDetails:\n$content\n";
 	foreach my $mail_alert_addr(@mail_alert_addrs)
 	{
- 		`sendmail -f $conf{mail_from} $mail_alert_addr</tmp/intrusive.alert`;
+ 		`sendmail -f $conf{mail_from} $mail_alert_addr<$conf{alert_buff}`;
  	}
- 	close(F);
- 	unlink('/tmp/intrusive.alert');
+ 	close(F); 	
  	print "[DEBUG] mail sent!\n" if($conf{debug});
  	@curr_mail_addrs=();
 }
@@ -538,37 +544,55 @@ sub alert	## READY
 	 	$alert_string.=$content;
 	} # end of foreach
 	
-    return 0 if(!$alert_now);
-	 my $send_buff=$alert_string;
-	 @alert_buff=();
-	 return 1 if(fork);
-	 open(F1,">$conf{alert_lock}");
-	 open(F2,">$conf{alert_marker}");
-	 close(F2);
-	 if($alert_types{'both'} ne undef)
-	 {
-	 		 &send_mail($send_buff);
-	 		`play $sound_path`; 
-	 }
-	 else
-	 {
-	 	&send_mail($send_buff) if($alert_types{'mail'} ne undef);
-	 	if($alert_types{'sound'} ne undef)
-	 	{
-			if($sound_path eq '')
+    	return 0 if(!$alert_now);
+    	my $send_buff=$alert_string;
+    	@alert_buff=();
+    	return 1 if(fork);
+	open(F1,">$conf{alert_lock}");
+	open(F2,">$conf{alert_marker}");
+	close(F2);
+	
+	### both means mail + sound
+	if($alert_types{'both'} ne undef)
+	{
+		 &send_mail($send_buff);
+		`play $sound_path`; 
+	}
+
+	&send_mail($send_buff) if($alert_types{'mail'} ne undef);
+
+ 	if($alert_types{'sound'} ne undef)
+ 	{
+		if($sound_path eq '')
+		{
+			&logme("[ERROR] Cannot play sound, no audio file path configured.");
+		}
+		else
+		{
+	   		`play $sound_path`;
+			print "Playing $sound_path.\n" if($conf{debug});
+		}
+ 	}
+	if($alert_types{'LED'} ne undef)
+	{
+		if(!(-f $conf{'alert_flash_lock'}))
+		{
+			open(F3,">$conf{alert_flash_lock}");
+			if(!fork())
 			{
-				&logme("[ERROR] Cannot play sound, no audio file path configured.");
+				while(-f $conf{'alert_flash_lock'})
+				{
+					`python /usr/sbin/intrusive_led.py`; # 2 seconds
+					sleep(1);
+				}
+				# OK, lock has been removed, stop blinking and exit
+				exit(); 
 			}
-			else
-			{
-		   	`play $sound_path`;
-				print "PLAY!!!\n\n" if($conf{debug});
-			}
-	 	}
-	 }	
-	 close(F1);
-	 unlink($conf{alert_lock});
-	 exit;
+		}
+	}
+	close(F1);
+	unlink($conf{alert_lock});
+	exit;
 }
 sub load_hosts	## READY
 {
@@ -683,7 +707,10 @@ sub check_friendly_ip 	## READY
 	return 0;
 }
 die "Fatal, $conf{sound_alert} file not detected, make sure you've set it correctly!\n" if($conf{sound_alert} && ! -f $conf{sound_alert});
+
 open($log_fh,">>$conf{log_file}");
+chmod 0600, $log_fh;
+
 &logme("Intrusive stared.");
 if(-f $conf{lock_file})
 {
