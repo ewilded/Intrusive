@@ -1,0 +1,6 @@
+\w{3} \d+ \d+:\d+:\d+ \w+ su\[\d+\]: Authentication failed for \w+::0:0:enforcing
+\w{3} \d+ \d+:\d+:\d+ \w+ su\[\d+\]: FAILED su for \w+ by \w+::0:0:enforcing
+\w{3} \d+ \d+:\d+:\d+ \w+ su\[\d+\]: - \/dev\/pts\/\d+ \w+:\w+::0:0:enforcing
+\w{3} \d{1,2} \d{2}:\d{2}:\d{2} \w+ sshd\[\d+\]: Failed password for \w+ from \d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3} port \d+ ssh2::0:0:enforcing
+\w{3} \d{1,2} \d{2}:\d{2}:\d{2} \w+ sshd\[\d+\]: pam_unix\(sshd:auth\): authentication failure; logname= uid=\d+ euid=\d+ tty=ssh ruser= rhost=[\w\.]+  user=\w+::0:0:enforcing
+.*::-1:-1:
