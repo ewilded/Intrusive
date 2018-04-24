@@ -1,1 +1,2 @@
 \w{3} \d+ \d+:\d+:\d+ \w+ \w+ system,error,critical login failure for user \w+ from  \d+\.\d+\.\d+\.\d+ via \w+::0:0:permissive
+.*::-1:-1:
